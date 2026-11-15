@@ -1,0 +1,322 @@
+{
+  "name": "Lionfish Weekly Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -320,
+        0
+      ],
+      "id": "3e19b20b-ec87-4c58-b030-c509b4a3b7b0",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://api.gbif.org/v1/occurrence/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "scientificName",
+              "value": "Pterois miles"
+            },
+            {
+              "name": "geometry",
+              "value": "POLYGON((19 30,37 30,37 42,19 42,19 30))"
+            },
+            {
+              "name": "limit",
+              "value": "0"
+            },
+            {
+              "name": "facet",
+              "value": "country"
+            },
+            {
+              "name": "facetLimit",
+              "value": "10"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -128,
+        0
+      ],
+      "id": "70955e1e-eafd-4fd6-a158-61d4e3e2c9df",
+      "name": "GBIF Total"
+    },
+    {
+      "parameters": {
+        "url": "https://api.gbif.org/v1/occurrence/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "scientificName",
+              "value": "Pterois miles"
+            },
+            {
+              "name": "geometry",
+              "value": "POLYGON((19 30,37 30,37 42,19 42,19 30))"
+            },
+            {
+              "name": "limit",
+              "value": "50"
+            },
+            {
+              "name": "eventDate",
+              "value": "={{ $now.minus({days: 30}).toFormat('yyyy-MM-dd') }},{{ $now.toFormat('yyyy-MM-dd') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        48,
+        0
+      ],
+      "id": "cea4edc7-9af5-4d3d-801d-f7c25d86373e",
+      "name": "GBIF Recent"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        272,
+        0
+      ],
+      "id": "af1ff685-062b-4332-91f5-66d73a84e5bf",
+      "name": "Read Log",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const total = $('GBIF Total').first().json;\nconst recent = $('GBIF Recent').first().json;\n\n// Earlier rows from the sheet (empty on the first run)\nconst rows = $input.all().map(i => i.json).filter(r => r.Total !== undefined && r.Total !== '');\nconst previous = rows.length ? Number(rows[rows.length - 1].Total) : null;\nconst diff = previous === null ? 0 : total.count - previous;\n\nconst names = { GR: 'Greece', TR: 'Türkiye', CY: 'Cyprus', IL: 'Israel', LB: 'Lebanon', SY: 'Syria', EG: 'Egypt', AL: 'Albania', IT: 'Italy', LY: 'Libya', HR: 'Croatia', ME: 'Montenegro' };\nconst facet = (total.facets || []).find(f => f.field === 'COUNTRY');\nconst countries = facet ? facet.counts.map(c => ({ name: names[c.name] || c.name, count: c.count })) : [];\n\nconst latest = (recent.results || [])\n  .filter(r => r.eventDate)\n  .sort((a, b) => String(b.eventDate).localeCompare(String(a.eventDate)))\n  .slice(0, 5);\n\nconst today = new Date().toISOString().slice(0, 10);\nconst diffText = previous === null ? 'First run – no earlier total to compare.' : (diff >= 0 ? '+' : '') + diff + ' since the last report (' + previous + ').';\n\nconst html =\n  '<h2>Lionfish Weekly Report – ' + today + '</h2>' +\n  '<p><b>Total records (Pterois miles, Eastern Mediterranean):</b> ' + total.count + '<br>' +\n  '<b>Change:</b> ' + diffText + '<br>' +\n  '<b>Observed in the last 30 days:</b> ' + recent.count + '</p>' +\n  '<h3>Records by country</h3><ul>' +\n  countries.map(c => '<li>' + c.name + ': ' + c.count + '</li>').join('') + '</ul>' +\n  '<h3>Latest observations</h3><ul>' +\n  (latest.length ? latest.map(r => '<li>' + String(r.eventDate).slice(0, 10) + ' – ' + (r.country || r.countryCode || '?') +\n    (r.stateProvince ? ', ' + r.stateProvince : '') +\n    ' – <a href=\"https://www.gbif.org/occurrence/' + r.key + '\">open record</a></li>').join('') : '<li>No new observations.</li>') +\n  '</ul><p style=\"color:#777\">Source: GBIF.org occurrence search. Built with n8n.</p>';\n\nreturn [{ json: {\n  Date: today,\n  Total: total.count,\n  Change: diff,\n  Last30Days: recent.count,\n  TopCountry: countries.length ? countries[0].name : '',\n  emailHtml: html\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        0
+      ],
+      "id": "74a93792-7313-44d8-9efa-5db5f2dbde98",
+      "name": "Build Report"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.Date }}",
+            "Total": "={{ $json.Total }}",
+            "Change": "={{ $json.Change }}",
+            "Last30Days": "={{ $json.Last30Days }}",
+            "TopCountry": "={{ $json.TopCountry }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Total",
+              "displayName": "Total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Change",
+              "displayName": "Change",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Last30Days",
+              "displayName": "Last30Days",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "TopCountry",
+              "displayName": "TopCountry",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -288,
+        336
+      ],
+      "id": "ea14dc7e-e109-4bfb-863b-84dcf7211fab",
+      "name": "Save to Log"
+    },
+    {
+      "parameters": {
+        "sendTo": "your-email@example.com",
+        "subject": "=Lionfish Weekly Report – {{ $('Build Report').first().json.Date }}",
+        "message": "={{ $('Build Report').first().json.emailHtml }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -64,
+        336
+      ],
+      "id": "2556b906-081a-4db8-9038-dcca387be8b7",
+      "name": "Email Report"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "GBIF Total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GBIF Total": {
+      "main": [
+        [
+          {
+            "node": "GBIF Recent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GBIF Recent": {
+      "main": [
+        [
+          {
+            "node": "Read Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Log": {
+      "main": [
+        [
+          {
+            "node": "Build Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Report": {
+      "main": [
+        [
+          {
+            "node": "Save to Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Log": {
+      "main": [
+        [
+          {
+            "node": "Email Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "tags": []
+}
